@@ -1,0 +1,223 @@
+Certainly! I'll create a detailed documentation of the Product module and database configuration, focusing on the Domain-Driven Design (DDD) approach and NestJS architecture. This documentation is aimed at helping junior developers understand the structure and concepts used.
+
+# Product Module Documentation
+
+## 1. Overview
+
+This project implements a Product module using Domain-Driven Design (DDD) principles within a NestJS application. It includes CRUD operations for products and uses PostgreSQL as the database, configured with TypeORM.
+
+## 2. Architecture
+
+The application follows a modular structure based on DDD and NestJS best practices:
+
+```
+src/
+├── modules/
+│   └── product/
+│       ├── domain/
+│       ├── application/
+│       └── infrastructure/
+├── infrastructure/
+│   └── database/
+└── main.ts
+```
+
+### 2.1 NestJS Concepts
+
+- **Modules**: Organize application structure (e.g., ProductModule).
+- **Controllers**: Handle HTTP requests and define API routes.
+- **Services**: Contain business logic and interact with repositories.
+- **Entities**: Represent database models and domain objects.
+- **DTOs (Data Transfer Objects)**: Define shapes of data for creating and updating records.
+
+### 2.2 DDD Concepts
+
+- **Domain**: Core business logic and entities (Product entity).
+- **Application**: Use cases and application services (ProductService).
+- **Infrastructure**: Framework-specific code, database access, and controllers.
+
+## 3. Product Module Structure
+
+```
+modules/product/
+├── domain/
+│   └── product.entity.ts
+├── application/
+│   ├── dto/
+│   │   ├── create-product.dto.ts
+│   │   └── update-product.dto.ts
+│   └── product.service.ts
+├── infrastructure/
+│   └── product.controller.ts
+└── product.module.ts
+```
+
+### 3.1 Domain Layer (`domain/`)
+
+Contains the core business logic and entities.
+
+#### `product.entity.ts`
+
+```typescript
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+
+@Entity()
+export class Product {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  name: string;
+
+  @Column('decimal', { precision: 10, scale: 2 })
+  price: number;
+
+  @Column()
+  description: string;
+
+  @Column()
+  stock: number;
+
+  @Column({ default: true })
+  isActive: boolean;
+}
+```
+
+This entity represents a Product in the domain and database.
+
+### 3.2 Application Layer (`application/`)
+
+Contains application services and DTOs.
+
+#### `product.service.ts`
+
+```typescript
+@Injectable()
+export class ProductService {
+  constructor(
+    @InjectRepository(Product)
+    private productRepository: Repository<Product>,
+  ) {}
+
+  // Methods: findAll, findOne, create, update, remove, hardRemove
+}
+```
+
+This service contains the business logic for product operations.
+
+#### DTOs
+
+- `create-product.dto.ts`: Defines the structure for creating a product.
+- `update-product.dto.ts`: Defines the structure for updating a product.
+
+### 3.3 Infrastructure Layer (`infrastructure/`)
+
+Contains controllers and framework-specific code.
+
+#### `product.controller.ts`
+
+```typescript
+@Controller('products')
+export class ProductController {
+  constructor(private readonly productService: ProductService) {}
+
+  // HTTP methods: GET, POST, PUT, DELETE
+}
+```
+
+This controller handles HTTP requests for product operations.
+
+### 3.4 Module Definition (`product.module.ts`)
+
+```typescript
+@Module({
+  imports: [TypeOrmModule.forFeature([Product])],
+  providers: [ProductService],
+  controllers: [ProductController],
+})
+export class ProductModule {}
+```
+
+This file ties together the components of the Product module.
+
+## 4. Database Configuration
+
+### 4.1 TypeORM Configuration (`src/infrastructure/database/typeorm.config.ts`)
+
+```typescript
+export const typeOrmConfig: TypeOrmModuleOptions = {
+  type: 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT, 10) || 5432,
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || 'password',
+  database: process.env.DB_NAME || 'ecommerce',
+  entities: [__dirname + '/../../**/*.entity{.ts,.js}'],
+  synchronize: process.env.NODE_ENV !== 'production',
+};
+```
+
+This configuration sets up the connection to the PostgreSQL database using environment variables.
+
+### 4.2 Environment Variables (`.env`)
+
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=
+DB_NAME=ecommerce
+```
+
+These variables are used to configure the database connection.
+
+## 5. Main Application Setup (`src/main.ts`)
+
+```typescript
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(new ValidationPipe());
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+This file sets up the NestJS application, including global pipes for validation.
+
+## 6. API Endpoints
+
+- `GET /products`: Retrieve all active products
+- `GET /products/:id`: Retrieve a specific product
+- `POST /products`: Create a new product
+- `PUT /products/:id`: Update an existing product
+- `DELETE /products/:id`: Soft delete a product (set isActive to false)
+- `DELETE /products/:id/hard`: Hard delete a product (remove from database)
+
+## 7. Key Concepts for Juniors
+
+1. **Dependency Injection**: NestJS uses DI to manage dependencies (e.g., injecting ProductService into ProductController).
+
+2. **Decorators**: Used extensively in NestJS (e.g., `@Controller`, `@Injectable`, `@Get`, `@Post`).
+
+3. **Repository Pattern**: TypeORM's Repository is used to abstract database operations.
+
+4. **DTO (Data Transfer Object)**: Used to define the structure of input data (e.g., CreateProductDto).
+
+5. **Entity**: Represents a database table and domain object (Product).
+
+6. **Validation**: Uses class-validator decorators in DTOs for input validation.
+
+7. **Environment Variables**: Used for configuration to keep sensitive data out of the codebase.
+
+8. **Soft Delete**: Implemented by setting an `isActive` flag instead of removing the record.
+
+## 8. Running the Application
+
+1. Ensure PostgreSQL is installed and running.
+2. Set up the `.env` file with correct database credentials.
+3. Install dependencies: `npm install`
+4. Run the application: `npm run start:dev`
+
+The application will be available at `http://localhost:3000`.
+
+This documentation provides a comprehensive overview of the Product module, its architecture, and key NestJS concepts. It should help junior developers understand the structure and implementation of this Domain-Driven Design approach in a NestJS application.

@@ -1,0 +1,361 @@
+Sure! Let's create a comprehensive documentation and flow for the `Cart` module, similar to what we have for the `Product` and `User` authentication modules.
+
+### Cart Module Overview
+
+The `Cart` module handles the functionality related to managing a user's shopping cart. This includes adding items to the cart, removing items from the cart, updating item quantities, and retrieving the cart contents.
+
+### Entities
+
+#### CartItem Entity
+
+The `CartItem` entity represents an item in the user's cart.
+
+```typescript:src/modules/cart/domain/cart.entity.ts
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { User } from '../../user/domain/user.entity';
+import { Product } from '../../product/domain/product.entity';
+
+@Entity()
+export class CartItem {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn()
+  user: User;
+
+  @ManyToOne(() => Product)
+  @JoinColumn()
+  product: Product;
+
+  @Column()
+  quantity: number;
+}
+```
+
+### DTOs
+
+#### AddToCartDto
+
+The `AddToCartDto` is used to validate the data when adding an item to the cart.
+
+```typescript:src/modules/cart/dto/add-to-cart.dto.ts
+import { IsUUID, IsInt, Min } from 'class-validator';
+
+export class AddToCartDto {
+  @IsUUID()
+  productId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+```
+
+#### UpdateQuantityDto
+
+The `UpdateQuantityDto` is used to validate the data when updating the quantity of an item in the cart.
+
+```typescript:src/modules/cart/dto/update-quantity.dto.ts
+import { IsInt, Min } from 'class-validator';
+
+export class UpdateQuantityDto {
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+```
+
+### Services
+
+#### CartService
+
+The `CartService` contains the business logic for managing the cart.
+
+```typescript:src/modules/cart/application/cart.service.ts
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { CartItem } from '../domain/cart.entity';
+import { User } from '../../user/domain/user.entity';
+import { Product } from '../../product/domain/product.entity';
+
+@Injectable()
+export class CartService {
+  private readonly logger = new Logger(CartService.name);
+
+  constructor(
+    @InjectRepository(CartItem)
+    private cartItemRepository: Repository<CartItem>,
+    @InjectRepository(Product)
+    private productRepository: Repository<Product>,
+  ) {}
+
+  async addToCart(
+    user: User,
+    productId: string,
+    quantity: number,
+  ): Promise<CartItem> {
+    this.logger.log(`Adding to cart: user=${user.id}, productId=${productId}, quantity=${quantity}`);
+
+    const product = await this.productRepository.findOne({
+      where: { id: productId },
+    });
+    if (!product) {
+      this.logger.error('Product not found');
+      throw new NotFoundException('Product not found');
+    }
+
+    let cartItem = await this.cartItemRepository.findOne({
+      where: { user: { id: user.id }, product: { id: productId } },
+    });
+
+    if (cartItem) {
+      this.logger.log('Cart item found, updating quantity');
+      cartItem.quantity += quantity;
+    } else {
+      this.logger.log('Cart item not found, creating new one');
+      cartItem = this.cartItemRepository.create({ user, product, quantity });
+    }
+
+    return this.cartItemRepository.save(cartItem);
+  }
+
+  async removeFromCart(user: User, productId: string): Promise<void> {
+    const cartItem = await this.cartItemRepository.findOne({
+      where: { user: { id: user.id }, product: { id: productId } },
+    });
+
+    if (!cartItem) {
+      throw new NotFoundException('Cart item not found');
+    }
+
+    await this.cartItemRepository.remove(cartItem);
+  }
+
+  async getCart(user: User): Promise<CartItem[]> {
+    return this.cartItemRepository.find({
+      where: { user: { id: user.id } },
+      relations: ['product'],
+    });
+  }
+
+  async updateQuantity(
+    user: User,
+    productId: string,
+    quantity: number,
+  ): Promise<CartItem> {
+    const cartItem = await this.cartItemRepository.findOne({
+      where: { user: { id: user.id }, product: { id: productId } },
+    });
+
+    if (!cartItem) {
+      throw new NotFoundException('Cart item not found');
+    }
+
+    cartItem.quantity = quantity;
+    return this.cartItemRepository.save(cartItem);
+  }
+}
+```
+
+### Controllers
+
+#### CartController
+
+The `CartController` handles HTTP requests related to the cart.
+
+```typescript:src/modules/cart/infrastructure/cart.controller.ts
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Patch,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/infrastructure/jwt-auth.guard';
+import { CartService } from '../application/cart.service';
+import { GetUser } from '../../auth/infrastructure/user.decorator';
+import { User } from '../../user/domain/user.entity';
+import { AddToCartDto } from '../dto/add-to-cart.dto';
+import { UpdateQuantityDto } from '../dto/update-quantity.dto';
+
+@Controller('cart')
+@UseGuards(JwtAuthGuard)
+export class CartController {
+  constructor(private cartService: CartService) {}
+
+  @Post('add')
+  async addToCart(
+    @GetUser() user: User,
+    @Body() addToCartDto: AddToCartDto,
+  ) {
+    return this.cartService.addToCart(user, addToCartDto.productId, addToCartDto.quantity);
+  }
+
+  @Delete('remove/:productId')
+  async removeFromCart(
+    @GetUser() user: User,
+    @Param('productId') productId: string,
+  ) {
+    await this.cartService.removeFromCart(user, productId);
+    return { message: 'Item removed from cart' };
+  }
+
+  @Get()
+  async getCart(@GetUser() user: User) {
+    return this.cartService.getCart(user);
+  }
+
+  @Patch('update/:productId')
+  async updateQuantity(
+    @GetUser() user: User,
+    @Param('productId') productId: string,
+    @Body() updateQuantityDto: UpdateQuantityDto,
+  ) {
+    return this.cartService.updateQuantity(user, productId, updateQuantityDto.quantity);
+  }
+}
+```
+
+### Module
+
+#### CartModule
+
+The `CartModule` imports the necessary repositories and provides the `CartService` and `CartController`.
+
+```typescript:src/modules/cart/cart.module.ts
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CartService } from './application/cart.service';
+import { CartController } from './infrastructure/cart.controller';
+import { CartItem } from './domain/cart.entity';
+import { Product } from '../product/domain/product.entity';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([CartItem, Product])],
+  providers: [CartService],
+  controllers: [CartController],
+})
+export class CartModule {}
+```
+
+### Summary of Endpoints
+
+1. **Add to Cart**
+    - Method: `POST`
+    - URL: `/cart/add`
+    - Body:
+      ```json
+      {
+        "productId": "product-id-123",
+        "quantity": 2
+      }
+      ```
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+2. **Remove from Cart**
+    - Method: `DELETE`
+    - URL: `/cart/remove/:productId`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+3. **Get Cart**
+    - Method: `GET`
+    - URL: `/cart`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+4. **Update Quantity**
+    - Method: `PATCH`
+    - URL: `/cart/update/:productId`
+    - Body:
+      ```json
+      {
+        "quantity": 3
+      }
+      ```
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+### Testing the Endpoints in Postman
+
+1. **Register a New User**
+    - Method: `POST`
+    - URL: `http://localhost:3000/auth/register`
+    - Body:
+      ```json
+      {
+        "email": "user@example.com",
+        "password": "password123",
+        "name": "John Doe"
+      }
+      ```
+
+2. **Login User**
+    - Method: `POST`
+    - URL: `http://localhost:3000/auth/login`
+    - Body:
+      ```json
+      {
+        "email": "user@example.com",
+        "password": "password123"
+      }
+      ```
+
+3. **Add to Cart**
+    - Method: `POST`
+    - URL: `http://localhost:3000/cart/add`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+    - Body:
+      ```json
+      {
+        "productId": "product-id-123",
+        "quantity": 2
+      }
+      ```
+
+4. **Remove from Cart**
+    - Method: `DELETE`
+    - URL: `http://localhost:3000/cart/remove/product-id-123`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+5. **Get Cart**
+    - Method: `GET`
+    - URL: `http://localhost:3000/cart`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+
+6. **Update Quantity**
+    - Method: `PATCH`
+    - URL: `http://localhost:3000/cart/update/product-id-123`
+    - Headers:
+      - Key: `Authorization`
+      - Value: `Bearer YOUR_ACCESS_TOKEN`
+    - Body:
+      ```json
+      {
+        "quantity": 3
+      }
+      ```
+
+By following this documentation and flow, you should have a comprehensive understanding of the `Cart` module and how to interact with it using Postman. If you have any further questions or need additional assistance, feel free to ask!

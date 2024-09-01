@@ -35,13 +35,19 @@ export class ProductService {
     id: string,
     updateProductDto: UpdateProductDto,
   ): Promise<Product> {
-    await this.findOne(id);
+    const product = await this.findOne(id);
+    if (!product) {
+      throw new NotFoundException(`Product with ID "${id}" not found`);
+    }
     await this.productRepository.update(id, updateProductDto);
     return this.findOne(id);
   }
 
   async remove(id: string): Promise<void> {
-    await this.findOne(id);
+    const product = await this.findOne(id);
+    if (!product) {
+      throw new NotFoundException(`Product with ID "${id}" not found`);
+    }
     await this.productRepository.update(id, { isActive: false });
   }
 
